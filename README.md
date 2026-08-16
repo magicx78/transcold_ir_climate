@@ -195,3 +195,9 @@ python tests/test_smartir_codeset.py
 ## Credits
 
 IR-Protokoll basiert auf [IRremoteESP8266](https://github.com/crankyoldgit/IRremoteESP8266) von crankyoldgit.
+
+Importierbare Code-Sets stammen aus dem [SmartIR](https://github.com/smartHomeHub/SmartIR)-Projekt; sie werden nicht mitgeliefert, sondern vom Nutzer importiert.
+
+## Lizenz
+
+[LGPL-2.1](LICENSE) — passend zur Lizenz von IRremoteESP8266, aus dem das Transcold-Protokoll portiert wurde.
