@@ -3,25 +3,26 @@
     "step": {
       "user": {
         "title": "Transcold IR Climate einrichten",
-        "description": "Wähle deine IR-Remote Entity und konfiguriere die Klimaanlage.",
+        "description": "Wähle deine IR-Remote Entity (z.B. Broadlink) ODER gib einen ESPHome-Service an, der rohe IR-Timings sendet.",
         "data": {
           "name": "Name",
-          "remote_entity": "IR-Remote Entity",
+          "remote_entity": "IR-Remote Entity (Broadlink etc.)",
+          "esphome_service": "ESPHome-Service (z.B. esphome.ir_proxy_send_raw_command)",
           "min_temp": "Minimale Temperatur",
           "max_temp": "Maximale Temperatur",
           "target_temp": "Zieltemperatur",
           "initial_operation_mode": "Anfänglicher Betriebsmodus",
-          "command_format": "Befehlsformat",
+          "command_format": "Befehlsformat (für Broadlink automatisch erkannt)",
           "protocol": "IR-Protokoll"
         }
       }
     },
     "error": {
-      "no_remotes": "Keine IR-Remote Entities gefunden. Bitte richte zuerst eine IR-Remote ein (z.B. Broadlink, ESPHome).",
-      "no_protocols": "Keine IR-Protokolle gefunden."
+      "need_target": "Wähle eine IR-Remote Entity oder gib einen ESPHome-Service an."
     },
     "abort": {
-      "already_configured": "Diese IR-Remote ist bereits konfiguriert."
+      "already_configured": "Diese IR-Remote ist bereits konfiguriert.",
+      "no_protocols": "Keine IR-Protokolle gefunden."
     }
   },
   "options": {
@@ -34,7 +35,7 @@
           "max_temp": "Maximale Temperatur",
           "target_temp": "Zieltemperatur",
           "initial_operation_mode": "Anfänglicher Betriebsmodus",
-          "command_format": "Befehlsformat"
+          "command_format": "Befehlsformat (für Broadlink automatisch erkannt)"
         }
       }
     }

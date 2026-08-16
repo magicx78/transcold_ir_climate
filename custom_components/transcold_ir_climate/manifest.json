@@ -1,11 +1,13 @@
 {
   "domain": "transcold_ir_climate",
   "name": "Transcold IR Climate",
-  "codeowners": ["@custom"],
+  "codeowners": ["@magicx78"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/DEIN_USERNAME/transcold_ir_climate",
-  "iot_class": "local_polling",
+  "documentation": "https://github.com/magicx78/transcold_ir_climate",
+  "integration_type": "device",
+  "iot_class": "assumed_state",
+  "issue_tracker": "https://github.com/magicx78/transcold_ir_climate/issues",
   "requirements": [],
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

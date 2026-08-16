@@ -2,6 +2,13 @@
 
 Ported from IRremoteESP8266 (src/ir_Transcold.cpp / ir_Transcold.h)
 https://github.com/crankyoldgit/IRremoteESP8266
+
+NOTE: This module is the legacy standalone codec. The climate platform uses
+protocols/transcold.py; both implement the identical (verified) wire format:
+
+    24-bit state, MSB..LSB: [0xE (4)] [Fan (4)] [Mode (4)] [Temp (4)] [0x54 (8)]
+
+Each byte is transmitted MSB-first followed by its bitwise inverse.
 """
 
 import struct
@@ -14,6 +21,7 @@ from .const import (
     TRANSCOLD_ONE_SPACE,
     TRANSCOLD_ZERO_SPACE,
     TRANSCOLD_BITS,
+    TRANSCOLD_MESSAGE_GAP,
     TRANSCOLD_MODE_COOL,
     TRANSCOLD_MODE_DRY,
     TRANSCOLD_MODE_AUTO,
@@ -24,6 +32,8 @@ from .const import (
     TRANSCOLD_FAN_MAX,
     TRANSCOLD_FAN_AUTO,
     TRANSCOLD_FAN_AUTO0,
+    TRANSCOLD_STATE_PREFIX,
+    TRANSCOLD_STATE_SUFFIX,
     TRANSCOLD_OFF,
     TRANSCOLD_SWING,
     TRANSCOLD_KNOWN_GOOD_STATE,
@@ -90,21 +100,16 @@ class TranscoldCodec:
     ) -> int:
         """Build a Transcold state from climate parameters.
 
-        Returns the 24-bit raw state.
+        Returns the 24-bit raw state. `swing` is ignored: Transcold swing is
+        a stateless toggle command (TRANSCOLD_SWING), not part of the state.
         """
         if not power:
             return TRANSCOLD_OFF
 
-        if swing:
-            return TRANSCOLD_SWING
-
-        # Get mode
         transcold_mode = cls.MODE_MAP.get(mode, TRANSCOLD_MODE_AUTO)
-
-        # Get fan speed
         transcold_fan = cls.FAN_MAP.get(fan, TRANSCOLD_FAN_AUTO)
 
-        # Adjust fan for mode constraints
+        # Auto/Dry only allow FanAuto0; the other modes only FanAuto.
         if mode in ("auto", "dry"):
             if transcold_fan == TRANSCOLD_FAN_AUTO:
                 transcold_fan = TRANSCOLD_FAN_AUTO0
@@ -112,24 +117,22 @@ class TranscoldCodec:
             if transcold_fan == TRANSCOLD_FAN_AUTO0:
                 transcold_fan = TRANSCOLD_FAN_AUTO
 
-        # Encode temperature
         temp_bits = cls.encode_temperature(temp)
 
-        # Fan mode is a special case of Dry
+        # Fan mode is a special case of Dry.
         if mode == "fan_only":
             transcold_mode = TRANSCOLD_MODE_DRY
             temp_bits = TRANSCOLD_FAN_TEMP_CODE
 
-        # Build 24-bit state
-        # Byte 0: [Temp(4)] [Mode(4)]
-        # Byte 1: [Fan(4)]  [0(4)]
-        # Byte 2: 0x54 (fixed)
-        byte0 = (temp_bits << 4) | transcold_mode
-        byte1 = (transcold_fan << 4) | 0x0
-        byte2 = 0x54
-
-        state = (byte0 << 16) | (byte1 << 8) | byte2
-        return state
+        # 24-bit state, MSB..LSB:
+        # [prefix 0xE (4)] [Fan (4)] [Mode (4)] [Temp (4)] [0x54 (8)]
+        return (
+            (TRANSCOLD_STATE_PREFIX << 20)
+            | (transcold_fan << 16)
+            | (transcold_mode << 12)
+            | (temp_bits << 8)
+            | TRANSCOLD_STATE_SUFFIX
+        )
 
     @classmethod
     def encode_to_raw_timings(cls, state: int, nbits: int = TRANSCOLD_BITS) -> list:
@@ -144,13 +147,13 @@ class TranscoldCodec:
         timings.append(TRANSCOLD_HDR_MARK)
         timings.append(-TRANSCOLD_HDR_SPACE)
 
-        # Data: each byte sent as normal + inverted, LSB first
+        # Data: bytes starting at the most significant byte; each byte is
+        # followed by its inverse, all bits MSB-first (sendData MSBfirst=true).
         for i in range(8, nbits + 1, 8):
             segment = (state >> (nbits - i)) & 0xFF
             both = (segment << 8) | ((~segment) & 0xFF)
 
-            # Send 16 bits, LSB first
-            for b in range(16):
+            for b in range(15, -1, -1):
                 bit = (both >> b) & 1
                 timings.append(TRANSCOLD_BIT_MARK)
                 if bit:
@@ -162,6 +165,7 @@ class TranscoldCodec:
         timings.append(TRANSCOLD_BIT_MARK)
         timings.append(-TRANSCOLD_HDR_SPACE)
         timings.append(TRANSCOLD_BIT_MARK)
+        timings.append(-TRANSCOLD_MESSAGE_GAP)
 
         return timings
 
@@ -169,41 +173,38 @@ class TranscoldCodec:
     def encode_to_broadlink(cls, state: int, nbits: int = TRANSCOLD_BITS) -> str:
         """Encode a Transcold state to Broadlink Base64 format.
 
-        Broadlink protocol:
-        - Header: 0x26 0x00 (repeat count)
-        - Length: 2 bytes LE
-        - Timings encoded as bytes (timing / 32.84us)
-        - Footer: 0x0d 0x05
+        Broadlink packet:
+        - 0x26 (IR), repeat count (0x00)
+        - payload length, uint16 LE
+        - pulses in 2^-15 s units (us * 269 / 8192); values > 255 as
+          0x00 + uint16 BE
+        The trailing MESSAGE_GAP space terminates the transmission.
         """
         timings = cls.encode_to_raw_timings(state, nbits)
 
-        # Broadlink uses a period of ~32.84us
-        period = 32.84
+        data = bytearray()
+        for t in timings:
+            units = max(1, round(abs(t) * 269 / 8192))
+            if units > 255:
+                data.append(0x00)
+                data.extend(struct.pack(">H", units))
+            else:
+                data.append(units)
 
-        # Build packet
         packet = bytearray()
         packet.append(0x26)  # IR
         packet.append(0x00)  # Repeat count
+        packet.extend(struct.pack("<H", len(data)))
+        packet.extend(data)
 
-        # Timing data
-        bl_timings = bytearray()
-        for t in timings:
-            # Convert to Broadlink units
-            units = int(abs(t) / period)
-            if units > 255:
-                # Use extended format for large timings
-                bl_timings.append(0x00)
-                bl_timings.extend(struct.pack(">H", units))
-            else:
-                bl_timings.append(units)
+        return base64.b64encode(bytes(packet)).decode("ascii")
 
-        # Length in bytes (little endian)
-        length = len(bl_timings)
-        packet.extend(struct.pack("<H", length))
-        packet.extend(bl_timings)
-        packet.extend([0x0d, 0x05])
-
-        return base64.b64encode(packet).decode("ascii")
+    @classmethod
+    def encode_swing_toggle(cls, command_format: str = "raw"):
+        """Return the swing-toggle command (send once to flip swing)."""
+        if command_format == "broadlink":
+            return cls.encode_to_broadlink(TRANSCOLD_SWING)
+        return cls.encode_to_raw_timings(TRANSCOLD_SWING)
 
     @classmethod
     def get_command(
@@ -219,9 +220,8 @@ class TranscoldCodec:
 
         Returns raw timings list or broadlink base64 string.
         """
-        state = cls.build_state(mode, temp, fan, power, swing)
+        state = cls.build_state(mode, temp, fan, power)
 
         if command_format == "broadlink":
             return cls.encode_to_broadlink(state)
-        else:
-            return cls.encode_to_raw_timings(state)
+        return cls.encode_to_raw_timings(state)

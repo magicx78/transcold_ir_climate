@@ -19,11 +19,13 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     DOMAIN,
     CONF_REMOTE_ENTITY,
+    CONF_ESPHOME_SERVICE,
     CONF_MIN_TEMP,
     CONF_MAX_TEMP,
     CONF_TARGET_TEMP,
@@ -37,6 +39,7 @@ from .const import (
     DEFAULT_COMMAND_FORMAT,
     DEFAULT_PROTOCOL,
     COMMAND_FORMAT_RAW,
+    COMMAND_FORMAT_BROADLINK,
 )
 from .protocols import get_protocol
 from .protocols.import_helper import discover_custom_protocols
@@ -74,7 +77,8 @@ async def async_setup_entry(
     options = config_entry.options
 
     name = data.get(CONF_NAME, "IR Klima")
-    remote_entity = data[CONF_REMOTE_ENTITY]
+    remote_entity = data.get(CONF_REMOTE_ENTITY)
+    esphome_service = data.get(CONF_ESPHOME_SERVICE)
     protocol_name = data.get(CONF_PROTOCOL, DEFAULT_PROTOCOL)
     min_temp = options.get(CONF_MIN_TEMP, data.get(CONF_MIN_TEMP, DEFAULT_MIN_TEMP))
     max_temp = options.get(CONF_MAX_TEMP, data.get(CONF_MAX_TEMP, DEFAULT_MAX_TEMP))
@@ -90,6 +94,13 @@ async def async_setup_entry(
         data.get(CONF_COMMAND_FORMAT, DEFAULT_COMMAND_FORMAT),
     )
 
+    if not remote_entity and not esphome_service:
+        _LOGGER.error(
+            "No IR target configured: set either a remote entity or an "
+            "ESPHome service"
+        )
+        return
+
     # Get protocol instance
     try:
         protocol = await hass.async_add_executor_job(get_protocol, protocol_name)
@@ -102,6 +113,7 @@ async def async_setup_entry(
         config_entry.entry_id,
         name,
         remote_entity,
+        esphome_service,
         protocol,
         min_temp,
         max_temp,
@@ -110,7 +122,7 @@ async def async_setup_entry(
         command_format,
     )
 
-    async_add_entities([entity], update_before_add=True)
+    async_add_entities([entity])
 
 
 class IRClimateEntity(ClimateEntity):
@@ -118,13 +130,16 @@ class IRClimateEntity(ClimateEntity):
 
     _attr_has_entity_name = False
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    # IR is one-way: HA can never verify the real device state.
+    _attr_assumed_state = True
 
     def __init__(
         self,
         hass: HomeAssistant,
         entry_id: str,
         name: str,
-        remote_entity: str,
+        remote_entity: str | None,
+        esphome_service: str | None,
         protocol,
         min_temp: int,
         max_temp: int,
@@ -138,6 +153,8 @@ class IRClimateEntity(ClimateEntity):
         self._attr_name = name
         self._attr_unique_id = f"{entry_id}_climate"
         self._remote_entity = remote_entity
+        self._esphome_service = esphome_service
+        self._remote_platform: str | None = None
         self._protocol = protocol
         self._command_format = command_format
 
@@ -255,10 +272,23 @@ class IRClimateEntity(ClimateEntity):
         self.async_write_ha_state()
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
-        """Set new target swing mode."""
+        """Set new target swing mode.
+
+        Transcold swing is a stateless toggle command: it is sent exactly
+        once when the swing mode changes. Sending the full state afterwards
+        is not needed (and would not encode swing anyway).
+        """
+        changed = swing_mode != self._swing_mode
         self._swing_mode = swing_mode
-        if self._power:
-            await self._send_command()
+
+        if changed and self._power:
+            fmt = self._effective_command_format()
+            toggle = self._protocol.encode_swing_toggle(command_format=fmt)
+            if toggle is not None:
+                await self._async_transmit(toggle)
+            else:
+                # Protocol encodes swing in the regular state instead.
+                await self._send_command()
         self.async_write_ha_state()
 
     async def async_turn_on(self) -> None:
@@ -280,11 +310,76 @@ class IRClimateEntity(ClimateEntity):
         await self._send_command()
         self.async_write_ha_state()
 
+    def _resolve_remote_platform(self) -> str | None:
+        """Look up which integration provides the target remote entity."""
+        if not self._remote_entity:
+            return None
+        if self._remote_platform is None:
+            registry = er.async_get(self.hass)
+            entry = registry.async_get(self._remote_entity)
+            self._remote_platform = entry.platform if entry else "unknown"
+            _LOGGER.debug(
+                "Remote %s is provided by platform %s",
+                self._remote_entity,
+                self._remote_platform,
+            )
+        return self._remote_platform
+
+    def _effective_command_format(self) -> str:
+        """Determine the wire format for the configured IR target.
+
+        Broadlink remotes only accept learned command names or base64
+        ("b64:...") via remote.send_command - raw timing lists never work
+        there, so we auto-upgrade "raw" to "broadlink" for them.
+        """
+        if self._esphome_service:
+            return COMMAND_FORMAT_RAW
+        if self._command_format == COMMAND_FORMAT_BROADLINK:
+            return COMMAND_FORMAT_BROADLINK
+        if self._resolve_remote_platform() == "broadlink":
+            return COMMAND_FORMAT_BROADLINK
+        return self._command_format
+
+    async def _async_transmit(self, command) -> None:
+        """Send an encoded IR command to the configured target."""
+        if self._esphome_service:
+            # ESPHome user-defined action, e.g. esphome.ir_proxy_send_raw_command
+            # with a variable named "command" of type int[].
+            domain, _, service = self._esphome_service.partition(".")
+            if not service:
+                domain, service = "esphome", self._esphome_service
+            await self.hass.services.async_call(
+                domain, service, {"command": command}, blocking=True
+            )
+            return
+
+        if isinstance(command, str):
+            # Broadlink base64 payloads need the "b64:" prefix, otherwise the
+            # integration treats them as learned command names.
+            if not command.startswith("b64:"):
+                command = f"b64:{command}"
+        else:
+            _LOGGER.error(
+                "remote.send_command cannot transmit raw timing lists to %s "
+                "(platform %s). Use a Broadlink remote (base64) or configure "
+                "an ESPHome service instead",
+                self._remote_entity,
+                self._resolve_remote_platform(),
+            )
+            return
+
+        await self.hass.services.async_call(
+            "remote",
+            "send_command",
+            {"entity_id": self._remote_entity, "command": command},
+            blocking=True,
+        )
+
     async def _send_command(self) -> None:
-        """Send IR command via remote.send_command service."""
+        """Encode the current state and transmit it."""
         protocol_mode = HA_TO_PROTOCOL_MODE.get(self._hvac_mode, "cool")
         protocol_fan = HA_TO_PROTOCOL_FAN.get(self._fan_mode, "auto")
-        swing = self._swing_mode == "on" if self._protocol.supports_swing else False
+        fmt = self._effective_command_format()
 
         try:
             command = self._protocol.encode(
@@ -292,30 +387,22 @@ class IRClimateEntity(ClimateEntity):
                 temp=int(self._target_temperature),
                 fan=protocol_fan,
                 power=self._power,
-                swing=swing,
-                command_format=self._command_format,
+                command_format=fmt,
             )
         except Exception as err:
             _LOGGER.error("Error encoding IR command: %s", err)
             return
 
-        service_data = {
-            "entity_id": self._remote_entity,
-            "command": command,
-        }
-
         try:
-            await self.hass.services.async_call(
-                "remote", "send_command", service_data, blocking=False
-            )
+            await self._async_transmit(command)
             _LOGGER.debug(
-                "Sent IR command via %s: mode=%s, temp=%s, fan=%s, power=%s, swing=%s",
+                "Sent IR command (%s/%s): mode=%s, temp=%s, fan=%s, power=%s",
                 self._protocol.name,
+                fmt,
                 protocol_mode,
                 self._target_temperature,
                 protocol_fan,
                 self._power,
-                swing,
             )
         except Exception as err:
             _LOGGER.error("Error sending IR command: %s", err)

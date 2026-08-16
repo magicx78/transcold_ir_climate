@@ -3,10 +3,9 @@
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.components import remote
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
@@ -16,11 +15,13 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
 )
 
 from .const import (
     DOMAIN,
     CONF_REMOTE_ENTITY,
+    CONF_ESPHOME_SERVICE,
     CONF_MIN_TEMP,
     CONF_MAX_TEMP,
     CONF_TARGET_TEMP,
@@ -37,7 +38,6 @@ from .const import (
     COMMAND_FORMAT_RAW,
     COMMAND_FORMAT_BROADLINK,
 )
-from .protocols import list_protocols
 from .protocols.import_helper import get_protocol_info
 
 
@@ -45,7 +45,7 @@ def _get_protocol_options(hass):
     """Get available protocols with descriptions."""
     from .protocols.import_helper import discover_custom_protocols
     discover_custom_protocols(hass)
-    
+
     info = get_protocol_info()
     options = []
     for name in sorted(info.keys()):
@@ -64,45 +64,35 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(self, user_input=None) -> FlowResult:
+    async def async_step_user(self, user_input=None) -> ConfigFlowResult:
         """Handle the initial step."""
         errors = {}
 
         if user_input is not None:
-            await self.async_set_unique_id(
-                f"{user_input[CONF_REMOTE_ENTITY]}_{user_input[CONF_PROTOCOL]}"
+            target = user_input.get(CONF_REMOTE_ENTITY) or user_input.get(
+                CONF_ESPHOME_SERVICE
             )
-            self._abort_if_unique_id_configured()
-            return self.async_create_entry(
-                title=user_input[CONF_NAME],
-                data=user_input,
-            )
-
-        # Get all remote entities
-        remotes = [
-            entity_id
-            for entity_id in self.hass.states.async_entity_ids(remote.DOMAIN)
-        ]
-
-        if not remotes:
-            return self.async_abort(
-                reason="no_remotes",
-                description_placeholders={},
-            )
+            if not target:
+                errors["base"] = "need_target"
+            else:
+                await self.async_set_unique_id(
+                    f"{target}_{user_input[CONF_PROTOCOL]}"
+                )
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=user_input[CONF_NAME],
+                    data=user_input,
+                )
 
         # Discover protocols
         protocol_options = await self.hass.async_add_executor_job(
             _get_protocol_options, self.hass
         )
-        
+
         if not protocol_options:
-            return self.async_abort(
-                reason="no_protocols",
-                description_placeholders={},
-            )
+            return self.async_abort(reason="no_protocols")
 
         protocol_values = [p["value"] for p in protocol_options]
-        protocol_labels = {p["value"]: p["label"] for p in protocol_options}
 
         data_schema = vol.Schema(
             {
@@ -114,9 +104,10 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         translation_key="protocol",
                     )
                 ),
-                vol.Required(CONF_REMOTE_ENTITY): EntitySelector(
+                vol.Optional(CONF_REMOTE_ENTITY): EntitySelector(
                     EntitySelectorConfig(domain="remote")
                 ),
+                vol.Optional(CONF_ESPHOME_SERVICE): TextSelector(),
                 vol.Optional(CONF_MIN_TEMP, default=DEFAULT_MIN_TEMP): NumberSelector(
                     NumberSelectorConfig(
                         min=16, max=30, step=1, mode=NumberSelectorMode.BOX
@@ -166,17 +157,17 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return TranscoldOptionsFlow(config_entry)
+        return TranscoldOptionsFlow()
 
 
 class TranscoldOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Transcold IR Climate."""
+    """Handle options flow for Transcold IR Climate.
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
+    Note: self.config_entry is provided by the OptionsFlow base class; it
+    must NOT be assigned in __init__ (read-only property since HA 2024.12).
+    """
 
-    async def async_step_init(self, user_input=None) -> FlowResult:
+    async def async_step_init(self, user_input=None) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)

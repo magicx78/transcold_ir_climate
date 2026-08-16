@@ -3,25 +3,26 @@
     "step": {
       "user": {
         "title": "Set up Transcold IR Climate",
-        "description": "Select your IR remote entity and configure the AC.",
+        "description": "Select your IR remote entity (e.g. Broadlink) OR enter an ESPHome service that transmits raw IR timings.",
         "data": {
           "name": "Name",
-          "remote_entity": "IR Remote Entity",
+          "remote_entity": "IR Remote Entity (Broadlink etc.)",
+          "esphome_service": "ESPHome service (e.g. esphome.ir_proxy_send_raw_command)",
           "min_temp": "Minimum Temperature",
           "max_temp": "Maximum Temperature",
           "target_temp": "Target Temperature",
           "initial_operation_mode": "Initial Operation Mode",
-          "command_format": "Command Format",
+          "command_format": "Command Format (auto-detected for Broadlink)",
           "protocol": "IR Protocol"
         }
       }
     },
     "error": {
-      "no_remotes": "No IR remote entities found. Please set up an IR remote first (e.g. Broadlink, ESPHome).",
-      "no_protocols": "No IR protocols found."
+      "need_target": "Select an IR remote entity or enter an ESPHome service."
     },
     "abort": {
-      "already_configured": "This IR remote is already configured."
+      "already_configured": "This IR remote is already configured.",
+      "no_protocols": "No IR protocols found."
     }
   },
   "options": {
@@ -34,7 +35,7 @@
           "max_temp": "Maximum Temperature",
           "target_temp": "Target Temperature",
           "initial_operation_mode": "Initial Operation Mode",
-          "command_format": "Command Format"
+          "command_format": "Command Format (auto-detected for Broadlink)"
         }
       }
     }

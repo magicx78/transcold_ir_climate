@@ -64,6 +64,15 @@ class BaseIRProtocol(ABC):
             List of timings in microseconds (positive=mark, negative=space)
         """
 
+    def encode_swing_toggle(self, command_format: str = "raw"):
+        """Return a swing-toggle command, or None if the protocol has none.
+
+        Protocols where swing is a stateless toggle (e.g. Transcold) override
+        this. The climate entity sends it once when the swing mode changes
+        instead of encoding swing into every state command.
+        """
+        return None
+
     def validate_state(self, mode: str, temp: int, fan: str) -> tuple[str, int, str]:
         """Validate and normalize climate state.
 
