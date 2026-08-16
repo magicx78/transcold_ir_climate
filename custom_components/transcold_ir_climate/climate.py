@@ -19,6 +19,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -246,6 +247,7 @@ class IRClimateEntity(ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
+        saved = {"_power": self._power, "_hvac_mode": self._hvac_mode}
         if hvac_mode == HVACMode.OFF:
             self._power = False
             self._hvac_mode = HVACMode.OFF
@@ -253,22 +255,24 @@ class IRClimateEntity(ClimateEntity):
             self._power = True
             self._hvac_mode = hvac_mode
 
-        await self._send_command()
+        await self._send_or_restore(saved)
         self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         if (temp := kwargs.get(ATTR_TEMPERATURE)) is not None:
+            saved = {"_target_temperature": self._target_temperature}
             self._target_temperature = int(temp)
             if self._power:
-                await self._send_command()
+                await self._send_or_restore(saved)
             self.async_write_ha_state()
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
+        saved = {"_fan_mode": self._fan_mode}
         self._fan_mode = fan_mode
         if self._power:
-            await self._send_command()
+            await self._send_or_restore(saved)
         self.async_write_ha_state()
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
@@ -279,20 +283,26 @@ class IRClimateEntity(ClimateEntity):
         is not needed (and would not encode swing anyway).
         """
         changed = swing_mode != self._swing_mode
+        saved = {"_swing_mode": self._swing_mode}
         self._swing_mode = swing_mode
 
         if changed and self._power:
-            fmt = self._effective_command_format()
-            toggle = self._protocol.encode_swing_toggle(command_format=fmt)
-            if toggle is not None:
-                await self._async_transmit(toggle)
-            else:
-                # Protocol encodes swing in the regular state instead.
-                await self._send_command()
+            try:
+                fmt = self._effective_command_format()
+                toggle = self._protocol.encode_swing_toggle(command_format=fmt)
+                if toggle is not None:
+                    await self._async_transmit(toggle)
+                else:
+                    # Protocol encodes swing in the regular state instead.
+                    await self._send_command()
+            except Exception:
+                self._restore(saved)
+                raise
         self.async_write_ha_state()
 
     async def async_turn_on(self) -> None:
         """Turn the entity on."""
+        saved = {"_power": self._power, "_hvac_mode": self._hvac_mode}
         self._power = True
         if self._hvac_mode == HVACMode.OFF:
             # Find first non-off mode
@@ -300,14 +310,15 @@ class IRClimateEntity(ClimateEntity):
                 if mode != HVACMode.OFF:
                     self._hvac_mode = mode
                     break
-        await self._send_command()
+        await self._send_or_restore(saved)
         self.async_write_ha_state()
 
     async def async_turn_off(self) -> None:
         """Turn the entity off."""
+        saved = {"_power": self._power, "_hvac_mode": self._hvac_mode}
         self._power = False
         self._hvac_mode = HVACMode.OFF
-        await self._send_command()
+        await self._send_or_restore(saved)
         self.async_write_ha_state()
 
     def _resolve_remote_platform(self) -> str | None:
@@ -359,14 +370,12 @@ class IRClimateEntity(ClimateEntity):
             if not command.startswith("b64:"):
                 command = f"b64:{command}"
         else:
-            _LOGGER.error(
-                "remote.send_command cannot transmit raw timing lists to %s "
-                "(platform %s). Use a Broadlink remote (base64) or configure "
-                "an ESPHome service instead",
-                self._remote_entity,
-                self._resolve_remote_platform(),
+            raise HomeAssistantError(
+                f"remote.send_command cannot transmit raw timing lists to "
+                f"{self._remote_entity} (platform "
+                f"{self._resolve_remote_platform()}). Use a Broadlink remote "
+                f"(base64) or configure an ESPHome service instead"
             )
-            return
 
         await self.hass.services.async_call(
             "remote",
@@ -375,8 +384,26 @@ class IRClimateEntity(ClimateEntity):
             blocking=True,
         )
 
+    def _restore(self, saved: dict) -> None:
+        """Roll back internal state after a failed transmission."""
+        for attr, value in saved.items():
+            setattr(self, attr, value)
+
+    async def _send_or_restore(self, saved: dict) -> None:
+        """Transmit the current state; roll back `saved` fields on failure."""
+        try:
+            await self._send_command()
+        except Exception:
+            self._restore(saved)
+            raise
+
     async def _send_command(self) -> None:
-        """Encode the current state and transmit it."""
+        """Encode the current state and transmit it.
+
+        Raises HomeAssistantError when encoding or transmission fails so the
+        failure is visible in the UI instead of silently pretending the
+        (assumed-state) command reached the device.
+        """
         protocol_mode = HA_TO_PROTOCOL_MODE.get(self._hvac_mode, "cool")
         protocol_fan = HA_TO_PROTOCOL_FAN.get(self._fan_mode, "auto")
         fmt = self._effective_command_format()
@@ -390,19 +417,21 @@ class IRClimateEntity(ClimateEntity):
                 command_format=fmt,
             )
         except Exception as err:
-            _LOGGER.error("Error encoding IR command: %s", err)
-            return
+            raise HomeAssistantError(f"Error encoding IR command: {err}") from err
 
         try:
             await self._async_transmit(command)
-            _LOGGER.debug(
-                "Sent IR command (%s/%s): mode=%s, temp=%s, fan=%s, power=%s",
-                self._protocol.name,
-                fmt,
-                protocol_mode,
-                self._target_temperature,
-                protocol_fan,
-                self._power,
-            )
+        except HomeAssistantError:
+            raise
         except Exception as err:
-            _LOGGER.error("Error sending IR command: %s", err)
+            raise HomeAssistantError(f"Error sending IR command: {err}") from err
+
+        _LOGGER.debug(
+            "Sent IR command (%s/%s): mode=%s, temp=%s, fan=%s, power=%s",
+            self._protocol.name,
+            fmt,
+            protocol_mode,
+            self._target_temperature,
+            protocol_fan,
+            self._power,
+        )
