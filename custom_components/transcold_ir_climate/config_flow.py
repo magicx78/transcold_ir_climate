@@ -26,15 +26,37 @@ from .const import (
     CONF_TARGET_TEMP,
     CONF_INITIAL_OPERATION_MODE,
     CONF_COMMAND_FORMAT,
+    CONF_PROTOCOL,
     DEFAULT_NAME,
     DEFAULT_MIN_TEMP,
     DEFAULT_MAX_TEMP,
     DEFAULT_TARGET_TEMP,
     DEFAULT_INITIAL_OPERATION_MODE,
     DEFAULT_COMMAND_FORMAT,
+    DEFAULT_PROTOCOL,
     COMMAND_FORMAT_RAW,
     COMMAND_FORMAT_BROADLINK,
 )
+from .protocols import list_protocols
+from .protocols.import_helper import get_protocol_info
+
+
+def _get_protocol_options(hass):
+    """Get available protocols with descriptions."""
+    from .protocols.import_helper import discover_custom_protocols
+    discover_custom_protocols(hass)
+    
+    info = get_protocol_info()
+    options = []
+    for name in sorted(info.keys()):
+        desc = info[name].get("description", name)
+        models = info[name].get("supported_models", [])
+        if models:
+            label = f"{desc} ({', '.join(models)})"
+        else:
+            label = desc
+        options.append({"value": name, "label": label})
+    return options
 
 
 class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -48,7 +70,7 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             await self.async_set_unique_id(
-                user_input[CONF_REMOTE_ENTITY]
+                f"{user_input[CONF_REMOTE_ENTITY]}_{user_input[CONF_PROTOCOL]}"
             )
             self._abort_if_unique_id_configured()
             return self.async_create_entry(
@@ -68,9 +90,30 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 description_placeholders={},
             )
 
+        # Discover protocols
+        protocol_options = await self.hass.async_add_executor_job(
+            _get_protocol_options, self.hass
+        )
+        
+        if not protocol_options:
+            return self.async_abort(
+                reason="no_protocols",
+                description_placeholders={},
+            )
+
+        protocol_values = [p["value"] for p in protocol_options]
+        protocol_labels = {p["value"]: p["label"] for p in protocol_options}
+
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
+                vol.Required(CONF_PROTOCOL, default=DEFAULT_PROTOCOL): SelectSelector(
+                    SelectSelectorConfig(
+                        options=protocol_values,
+                        mode=SelectSelectorMode.DROPDOWN,
+                        translation_key="protocol",
+                    )
+                ),
                 vol.Required(CONF_REMOTE_ENTITY): EntitySelector(
                     EntitySelectorConfig(domain="remote")
                 ),

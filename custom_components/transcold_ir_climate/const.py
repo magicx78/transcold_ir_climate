@@ -11,14 +11,16 @@ CONF_MAX_TEMP = "max_temp"
 CONF_TARGET_TEMP = "target_temp"
 CONF_INITIAL_OPERATION_MODE = "initial_operation_mode"
 CONF_COMMAND_FORMAT = "command_format"
+CONF_PROTOCOL = "protocol"
 
 # Defaults
-DEFAULT_NAME = "Transcold Klima"
+DEFAULT_NAME = "IR Klima"
 DEFAULT_MIN_TEMP = 16
 DEFAULT_MAX_TEMP = 30
 DEFAULT_TARGET_TEMP = 22
 DEFAULT_INITIAL_OPERATION_MODE = "off"
 DEFAULT_COMMAND_FORMAT = "raw"
+DEFAULT_PROTOCOL = "transcold"
 
 # Command formats
 COMMAND_FORMAT_RAW = "raw"

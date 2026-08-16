@@ -11,12 +11,14 @@
           "max_temp": "Maximale Temperatur",
           "target_temp": "Zieltemperatur",
           "initial_operation_mode": "Anfänglicher Betriebsmodus",
-          "command_format": "Befehlsformat"
+          "command_format": "Befehlsformat",
+          "protocol": "IR-Protokoll"
         }
       }
     },
     "error": {
-      "no_remotes": "Keine IR-Remote Entities gefunden. Bitte richte zuerst eine IR-Remote ein (z.B. Broadlink, ESPHome)."
+      "no_remotes": "Keine IR-Remote Entities gefunden. Bitte richte zuerst eine IR-Remote ein (z.B. Broadlink, ESPHome).",
+      "no_protocols": "Keine IR-Protokolle gefunden."
     },
     "abort": {
       "already_configured": "Diese IR-Remote ist bereits konfiguriert."
@@ -34,6 +36,13 @@
           "initial_operation_mode": "Anfänglicher Betriebsmodus",
           "command_format": "Befehlsformat"
         }
+      }
+    }
+  },
+  "selector": {
+    "protocol": {
+      "options": {
+        "transcold": "Transcold"
       }
     }
   }

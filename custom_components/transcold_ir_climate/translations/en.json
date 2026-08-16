@@ -11,12 +11,14 @@
           "max_temp": "Maximum Temperature",
           "target_temp": "Target Temperature",
           "initial_operation_mode": "Initial Operation Mode",
-          "command_format": "Command Format"
+          "command_format": "Command Format",
+          "protocol": "IR Protocol"
         }
       }
     },
     "error": {
-      "no_remotes": "No IR remote entities found. Please set up an IR remote first (e.g. Broadlink, ESPHome)."
+      "no_remotes": "No IR remote entities found. Please set up an IR remote first (e.g. Broadlink, ESPHome).",
+      "no_protocols": "No IR protocols found."
     },
     "abort": {
       "already_configured": "This IR remote is already configured."
@@ -34,6 +36,13 @@
           "initial_operation_mode": "Initial Operation Mode",
           "command_format": "Command Format"
         }
+      }
+    }
+  },
+  "selector": {
+    "protocol": {
+      "options": {
+        "transcold": "Transcold"
       }
     }
   }
