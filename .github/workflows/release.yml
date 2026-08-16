@@ -4,10 +4,13 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
+    types: [closed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (created at the workflow ref if missing)"
+        description: "Tag to release (created at main if missing)"
         required: true
         default: "v1.1.1"
 
@@ -16,15 +19,41 @@ permissions:
 
 jobs:
   release:
+    # On pull_request events only run for actually merged PRs.
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Determine release tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            tag="$INPUT_TAG"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            version=$(python3 -c "import json; print(json.load(open('custom_components/transcold_ir_climate/manifest.json'))['version'])")
+            tag="v$version"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: >-
-          gh release create "$TAG"
-          --repo "$GITHUB_REPOSITORY"
-          --target "$GITHUB_SHA"
-          --title "$TAG"
-          --generate-notes
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists - nothing to do"
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target main \
+              --title "$TAG" \
+              --generate-notes
+          fi
