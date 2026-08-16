@@ -16,7 +16,6 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
-    TextSelector,
 )
 
 from .const import (
@@ -40,6 +39,29 @@ from .const import (
     COMMAND_FORMAT_BROADLINK,
 )
 from .protocols.import_helper import get_protocol_info
+
+
+def _get_esphome_raw_targets(hass) -> list[dict]:
+    """Find ESPHome actions matching this integration's raw-command contract.
+
+    The integration calls the chosen esphome.* action with a single
+    "command" variable (int[] raw timings, see README). There is no schema
+    introspection available for that from the service registry, so we use
+    a naming heuristic instead: any esphome action whose name contains
+    "send_raw" was generated from a remote_transmitter.transmit_raw lambda
+    with exactly that contract (this is how the built-in ir-proxy example
+    in the README is set up). Actions like send_nec/send_samsung/... take
+    protocol-specific variables (code, bits, ...) and are not compatible.
+    """
+    services = hass.services.async_services().get("esphome", {})
+    return sorted(
+        (
+            {"value": f"esphome.{name}", "label": name.replace("_", " ").title()}
+            for name in services
+            if "send_raw" in name
+        ),
+        key=lambda option: option["label"],
+    )
 
 
 def _get_protocol_options(hass):
@@ -113,6 +135,8 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not protocol_options:
             return self.async_abort(reason="no_protocols")
 
+        esphome_options = _get_esphome_raw_targets(self.hass)
+
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
@@ -129,7 +153,16 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         domain="remote", integration="broadlink"
                     )
                 ),
-                vol.Optional(CONF_ESPHOME_SERVICE): TextSelector(),
+                vol.Optional(CONF_ESPHOME_SERVICE): SelectSelector(
+                    SelectSelectorConfig(
+                        # Suggests discovered esphome.*send_raw* actions but
+                        # still accepts free text for setups this heuristic
+                        # cannot detect (e.g. a custom variable/service name).
+                        options=esphome_options,
+                        mode=SelectSelectorMode.DROPDOWN,
+                        custom_value=True,
+                    )
+                ),
                 vol.Optional(CONF_MIN_TEMP, default=DEFAULT_MIN_TEMP): NumberSelector(
                     NumberSelectorConfig(
                         min=16, max=30, step=1, mode=NumberSelectorMode.BOX
