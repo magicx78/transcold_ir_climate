@@ -18,7 +18,8 @@
       }
     },
     "error": {
-      "need_target": "Wähle eine IR-Remote Entity oder gib einen ESPHome-Service an."
+      "need_target": "Wähle eine IR-Remote Entity oder gib einen ESPHome-Service an.",
+      "not_ir_remote": "Diese Remote kann keine IR-Codes senden. Hier werden nur Broadlink-Remotes unterstützt (TV-/Media-Remotes wie Android TV können kein IR aussenden). Nutze für andere IR-Sender einen ESPHome-Service."
     },
     "abort": {
       "already_configured": "Diese IR-Remote ist bereits konfiguriert.",

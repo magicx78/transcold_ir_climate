@@ -18,7 +18,8 @@
       }
     },
     "error": {
-      "need_target": "Select an IR remote entity or enter an ESPHome service."
+      "need_target": "Select an IR remote entity or enter an ESPHome service.",
+      "not_ir_remote": "This remote cannot transmit IR codes. Only Broadlink remotes are supported here (TV/media remotes like Android TV cannot emit IR). Use an ESPHome service for other IR transmitters."
     },
     "abort": {
       "already_configured": "This IR remote is already configured.",

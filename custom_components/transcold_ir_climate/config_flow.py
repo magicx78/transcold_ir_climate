@@ -6,6 +6,7 @@ from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
@@ -64,6 +65,19 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    def _remote_can_transmit_ir(self, remote_entity: str | None) -> bool:
+        """Check that the chosen remote entity can actually emit IR.
+
+        Only Broadlink remotes accept base64 IR payloads via
+        remote.send_command. If no remote entity was chosen (ESPHome
+        target instead), there is nothing to validate.
+        """
+        if not remote_entity:
+            return True
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(remote_entity)
+        return entry is not None and entry.platform == "broadlink"
+
     async def async_step_user(self, user_input=None) -> ConfigFlowResult:
         """Handle the initial step."""
         errors = {}
@@ -74,6 +88,13 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             if not target:
                 errors["base"] = "need_target"
+            elif not self._remote_can_transmit_ir(
+                user_input.get(CONF_REMOTE_ENTITY)
+            ):
+                # remote.send_command only reaches real IR blasters via the
+                # Broadlink integration; TV/media remotes (Android TV, Apple
+                # TV, ...) silently accept the call but cannot emit IR.
+                errors[CONF_REMOTE_ENTITY] = "not_ir_remote"
             else:
                 await self.async_set_unique_id(
                     f"{target}_{user_input[CONF_PROTOCOL]}"
@@ -105,7 +126,9 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 ),
                 vol.Optional(CONF_REMOTE_ENTITY): EntitySelector(
-                    EntitySelectorConfig(domain="remote")
+                    EntitySelectorConfig(
+                        domain="remote", integration="broadlink"
+                    )
                 ),
                 vol.Optional(CONF_ESPHOME_SERVICE): TextSelector(),
                 vol.Optional(CONF_MIN_TEMP, default=DEFAULT_MIN_TEMP): NumberSelector(
