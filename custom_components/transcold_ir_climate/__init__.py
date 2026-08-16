@@ -38,5 +38,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if e.entry_id != entry.entry_id
         ]
         if not remaining:
-            async_unregister_panel(hass)
+            await async_unregister_panel(hass)
     return unload_ok
