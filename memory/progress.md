@@ -47,16 +47,39 @@
 - HA-Neustart durchgeführt; Config-Eintrag `loaded` (beweist, dass Panel-
   und View-Registrierung fehlerfrei liefen), HACS auf v1.2.1 synchron.
 
+**v1.2.2 — Race-Condition-Fix + ESPHome-Selector**
+
+- Nutzer bestätigt: Panel funktioniert (Screenshot, „läuft"), zweites Gerät
+  „IR Klima Wohnzimmer" hinzugefügt → Eintrag lief auf `setup_error`
+  („nicht geladen"-Badge im Panel, Entity `unavailable`).
+- Root Cause: `async_register_panel()` prüfte `panel_registered` vor den
+  `await`-Punkten und setzte das Flag erst danach. HA richtet mehrere
+  Config-Einträge derselben Domain **parallel** ein — zwei gleichzeitig
+  startende Einträge sahen beide "noch nicht registriert" und beide riefen
+  `panel_custom.async_register_panel()` → `ValueError: Overwriting panel
+  transcold-ir` → zweiter Entry-Setup schlägt komplett fehl. Reproduziert
+  bei JEDEM Neustart mit 2+ Geräten, kein einmaliger Ausrutscher.
+- Fix: `asyncio.Lock` in `hass.data` schützt Check-und-Registrieren (und
+  Check-und-Deregistrieren) atomar. `async_unregister_panel` dafür async
+  gemacht.
+- Nebenbei (Nutzer-Feedback aus Screenshot): ESPHome-Ziel war Freitext,
+  der vorhandene `esphome.ir_proxy_send_raw` (IR-Proxy, "kann beides")
+  tauchte nirgends als Auswahl auf. Jetzt: `config_flow.py` erkennt
+  `esphome.*send_raw*`-Actions automatisch und bietet sie im Dropdown an
+  (mit `custom_value=True` als Fallback für abweichende Setups).
+- Live sofort auf die Instanz deployed + Neustart; beide Config-Einträge
+  danach `loaded`, `climate.ir_klima_wohnzimmer` von `unavailable` → `off`.
+  Kein neuer Fehler im Log seit dem Fix-Neustart. HACS auf v1.2.2 synchron.
+
 ## Offene Punkte
 
 - [ ] **Nur manuell möglich:** GitHub-Repo-Topics setzen (Repo → About →
       Zahnrad → Topics, z.B. `home-assistant`, `hacs`, `climate`, `infrared`,
-      `broadlink`, `esphome`). Letzter roter HACS-Check; per API-Token dieser
-      Session nicht setzbar.
-- [ ] Panel im Browser gegenprüfen und einen echten SmartIR-Import testen.
+      `broadlink`, `esphome`). Letzter roter HACS-Check (1/9); per API-Token
+      dieser Session nicht setzbar — kein MCP-Tool dafür vorhanden.
 - [ ] Optional: Icon zusätzlich im `home-assistant/brands`-Repo einreichen
       (dann erscheint es auch in der HA-Integrationsliste, nicht nur in HACS).
 - [ ] Optional: Panel um „Code lernen" erweitern (Broadlink `remote.learn_command`
       direkt aus dem Panel, um eigene Code-Sets aufzuzeichnen).
-- [ ] Optional: Config-Eintrag von „1" auf einen sprechenden Namen umbenennen
-      (erscheint so im Panel-Tab „Geräte").
+- [ ] Optional: Config-Eintrag-Titel haben trailing spaces ("IR Klima
+      Schlafzimmer ") — kosmetisch, vom Nutzer beim Anlegen so vergeben.
