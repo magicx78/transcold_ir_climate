@@ -1,7 +1,11 @@
-"""Helper for importing custom IR protocol modules.
+"""Helper for importing custom IR protocol modules and SmartIR code sets.
 
-Users can place custom protocol files in:
-<config>/custom_components/transcold_ir_climate/protocols/
+Update-safe locations (survive HACS updates, recommended):
+    <config>/transcold_ir/protocols/*.py   - custom protocol classes
+    <config>/transcold_ir/codes/*.json     - SmartIR climate code sets
+
+Legacy location (wiped on every HACS update, still scanned):
+    <config>/custom_components/transcold_ir_climate/protocols/*.py
 
 A custom protocol must:
 1. Inherit from BaseIRProtocol
@@ -11,23 +15,15 @@ A custom protocol must:
 
 Example custom protocol file: my_ac.py
 --------------------------------------
-from .base import BaseIRProtocol
+from custom_components.transcold_ir_climate.protocols.base import BaseIRProtocol
 
 class MyACProtocol(BaseIRProtocol):
     name = "my_ac"
     description = "My Custom AC"
     supported_models = ["MyAC Model X"]
-    min_temp = 16
-    max_temp = 30
-    supports_swing = True
-    hvac_modes = ["off", "cool", "heat", "dry", "fan_only", "auto"]
-    fan_modes = ["auto", "low", "medium", "high"]
 
     def encode(self, mode, temp, fan, power=True, swing=False, command_format="raw"):
-        # Your encoding logic here
-        if command_format == "raw":
-            return [9000, -4500, ...]  # raw timings
-        return "base64_or_other_format"
+        ...
 
     def get_raw_timings(self, state):
         return self.encode(**state, command_format="raw")
@@ -40,60 +36,128 @@ from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 
-from . import PROTOCOLS, register_protocol
+from ..const import CODES_SUBDIR, CUSTOM_PROTOCOLS_SUBDIR, DATA_DIR
+from . import BUILTIN_PROTOCOLS, PROTOCOLS, register_protocol, unregister_protocol
 from .base import BaseIRProtocol
+from .smartir_codeset import SmartIRCodesetError, make_codeset_protocol
 
 _LOGGER = logging.getLogger(__name__)
 
 
+def get_data_dir(hass: HomeAssistant) -> Path:
+    """Return the update-safe data directory, creating it if needed."""
+    base = Path(hass.config.path(DATA_DIR))
+    (base / CODES_SUBDIR).mkdir(parents=True, exist_ok=True)
+    (base / CUSTOM_PROTOCOLS_SUBDIR).mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def _load_protocol_module(file_path: Path) -> set[str]:
+    """Import one .py file and register the protocol classes it defines.
+
+    Returns the names it registered.
+    """
+    module_name = file_path.stem
+    spec = importlib.util.spec_from_file_location(
+        f"custom_components.transcold_ir_climate.protocols.{module_name}",
+        file_path,
+    )
+    if spec is None or spec.loader is None:
+        return set()
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    registered: set[str] = set()
+    for attr_name in dir(module):
+        attr = getattr(module, attr_name)
+        if (
+            isinstance(attr, type)
+            and issubclass(attr, BaseIRProtocol)
+            and attr is not BaseIRProtocol
+            and getattr(attr, "name", None)
+            and attr.name not in BUILTIN_PROTOCOLS
+        ):
+            # Remember the origin so a deleted file can be reconciled away
+            attr.source_file = file_path.name
+            register_protocol(attr.name, attr)
+            registered.add(attr.name)
+            _LOGGER.info(
+                "Registered custom IR protocol: %s (%s)",
+                attr.name,
+                getattr(attr, "description", "No description"),
+            )
+    return registered
+
+
 def discover_custom_protocols(hass: HomeAssistant) -> None:
-    """Discover and register custom protocol modules from the protocols directory."""
-    try:
-        # Path to custom protocols
-        base_path = Path(hass.config.path("custom_components", "transcold_ir_climate", "protocols"))
+    """Discover custom protocols and SmartIR code sets. Blocking - run in executor.
+
+    Reconciles the registry with what is on disk, so protocols whose file was
+    deleted disappear without needing a restart.
+    """
+    skip = ("__init__", "base", "import_helper", "transcold", "smartir_codeset")
+
+    # Legacy location inside the integration + update-safe location
+    legacy = Path(
+        hass.config.path("custom_components", "transcold_ir_climate", "protocols")
+    )
+    data_dir = get_data_dir(hass)
+    protocol_dirs = [legacy, data_dir / CUSTOM_PROTOCOLS_SUBDIR]
+
+    found: set[str] = set()
+    for base_path in protocol_dirs:
         if not base_path.exists():
-            return
-
-        for file_path in base_path.glob("*.py"):
-            module_name = file_path.stem
-            if module_name in ("__init__", "base", "import_helper", "transcold"):
+            continue
+        for file_path in sorted(base_path.glob("*.py")):
+            if file_path.stem in skip:
                 continue
-
             try:
-                # Dynamic import
-                spec = importlib.util.spec_from_file_location(
-                    f"custom_components.transcold_ir_climate.protocols.{module_name}",
-                    file_path,
-                )
-                if spec is None or spec.loader is None:
-                    continue
-
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-
-                # Find protocol classes
-                for attr_name in dir(module):
-                    attr = getattr(module, attr_name)
-                    if (
-                        isinstance(attr, type)
-                        and issubclass(attr, BaseIRProtocol)
-                        and attr is not BaseIRProtocol
-                        and hasattr(attr, "name")
-                        and attr.name
-                    ):
-                        if attr.name not in PROTOCOLS:
-                            register_protocol(attr.name, attr)
-                            _LOGGER.info(
-                                "Registered custom IR protocol: %s (%s)",
-                                attr.name,
-                                getattr(attr, "description", "No description"),
-                            )
-
+                found |= _load_protocol_module(file_path)
             except Exception as err:
-                _LOGGER.warning("Failed to load custom protocol %s: %s", module_name, err)
+                _LOGGER.warning(
+                    "Failed to load custom protocol %s: %s", file_path.name, err
+                )
 
-    except Exception as err:
-        _LOGGER.error("Error discovering custom protocols: %s", err)
+    # Drop Python protocols whose source file is gone
+    for name in [
+        n
+        for n, cls in PROTOCOLS.items()
+        if n not in BUILTIN_PROTOCOLS
+        and not n.startswith("smartir_")
+        and getattr(cls, "source_file", None)
+    ]:
+        if name not in found:
+            unregister_protocol(name)
+
+    discover_codesets(hass)
+
+
+def discover_codesets(hass: HomeAssistant) -> None:
+    """(Re)register all SmartIR code sets. Blocking - run in executor."""
+    codes_dir = get_data_dir(hass) / CODES_SUBDIR
+
+    found: set[str] = set()
+    for file_path in sorted(codes_dir.glob("*.json")):
+        try:
+            protocol_class = make_codeset_protocol(file_path)
+        except (SmartIRCodesetError, ValueError, OSError) as err:
+            _LOGGER.warning(
+                "Skipping SmartIR code set %s: %s", file_path.name, err
+            )
+            continue
+        register_protocol(protocol_class.name, protocol_class)
+        found.add(protocol_class.name)
+        _LOGGER.debug(
+            "Registered SmartIR code set: %s (%s)",
+            protocol_class.name,
+            protocol_class.description,
+        )
+
+    # Drop registrations whose file disappeared
+    for name in [n for n in PROTOCOLS if n.startswith("smartir_")]:
+        if name not in found:
+            unregister_protocol(name)
 
 
 def get_protocol_info() -> dict:
@@ -110,5 +174,7 @@ def get_protocol_info() -> dict:
             "supports_swing": proto.supports_swing,
             "hvac_modes": proto.hvac_modes,
             "fan_modes": proto.fan_modes,
+            "builtin": name in BUILTIN_PROTOCOLS,
+            "source": getattr(proto, "source_file", None),
         }
     return info

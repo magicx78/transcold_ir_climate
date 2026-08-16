@@ -26,3 +26,13 @@ def list_protocols() -> list[str]:
 def register_protocol(name: str, protocol_class: Type[BaseIRProtocol]) -> None:
     """Register a new protocol dynamically."""
     PROTOCOLS[name] = protocol_class
+
+
+BUILTIN_PROTOCOLS = ("transcold",)
+
+
+def unregister_protocol(name: str) -> bool:
+    """Remove a dynamically registered protocol. Built-ins are protected."""
+    if name in BUILTIN_PROTOCOLS:
+        return False
+    return PROTOCOLS.pop(name, None) is not None

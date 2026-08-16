@@ -113,16 +113,15 @@ class TranscoldConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not protocol_options:
             return self.async_abort(reason="no_protocols")
 
-        protocol_values = [p["value"] for p in protocol_options]
-
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
                 vol.Required(CONF_PROTOCOL, default=DEFAULT_PROTOCOL): SelectSelector(
                     SelectSelectorConfig(
-                        options=protocol_values,
+                        # {value, label} pairs so imported SmartIR code sets
+                        # show manufacturer/model instead of the raw name
+                        options=protocol_options,
                         mode=SelectSelectorMode.DROPDOWN,
-                        translation_key="protocol",
                     )
                 ),
                 vol.Optional(CONF_REMOTE_ENTITY): EntitySelector(

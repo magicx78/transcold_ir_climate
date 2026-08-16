@@ -40,12 +40,5 @@
         }
       }
     }
-  },
-  "selector": {
-    "protocol": {
-      "options": {
-        "transcold": "Transcold"
-      }
-    }
   }
 }
