@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Transcold IR Climate",
+        "description": "Select your IR remote entity and configure the AC.",
+        "data": {
+          "name": "Name",
+          "remote_entity": "IR Remote Entity",
+          "min_temp": "Minimum Temperature",
+          "max_temp": "Maximum Temperature",
+          "target_temp": "Target Temperature",
+          "initial_operation_mode": "Initial Operation Mode",
+          "command_format": "Command Format"
+        }
+      }
+    },
+    "error": {
+      "no_remotes": "No IR remote entities found. Please set up an IR remote first (e.g. Broadlink, ESPHome)."
+    },
+    "abort": {
+      "already_configured": "This IR remote is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Transcold IR Climate Options",
+        "description": "Adjust the AC settings.",
+        "data": {
+          "min_temp": "Minimum Temperature",
+          "max_temp": "Maximum Temperature",
+          "target_temp": "Target Temperature",
+          "initial_operation_mode": "Initial Operation Mode",
+          "command_format": "Command Format"
+        }
+      }
+    }
+  }
+}

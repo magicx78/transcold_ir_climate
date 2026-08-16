@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Transcold IR Climate einrichten",
+        "description": "Wähle deine IR-Remote Entity und konfiguriere die Klimaanlage.",
+        "data": {
+          "name": "Name",
+          "remote_entity": "IR-Remote Entity",
+          "min_temp": "Minimale Temperatur",
+          "max_temp": "Maximale Temperatur",
+          "target_temp": "Zieltemperatur",
+          "initial_operation_mode": "Anfänglicher Betriebsmodus",
+          "command_format": "Befehlsformat"
+        }
+      }
+    },
+    "error": {
+      "no_remotes": "Keine IR-Remote Entities gefunden. Bitte richte zuerst eine IR-Remote ein (z.B. Broadlink, ESPHome)."
+    },
+    "abort": {
+      "already_configured": "Diese IR-Remote ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Transcold IR Climate Optionen",
+        "description": "Passe die Einstellungen der Klimaanlage an.",
+        "data": {
+          "min_temp": "Minimale Temperatur",
+          "max_temp": "Maximale Temperatur",
+          "target_temp": "Zieltemperatur",
+          "initial_operation_mode": "Anfänglicher Betriebsmodus",
+          "command_format": "Befehlsformat"
+        }
+      }
+    }
+  }
+}

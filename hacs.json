@@ -1,0 +1,9 @@
+{
+  "name": "Transcold IR Climate",
+  "content_in_root": false,
+  "filename": "transcold_ir_climate.zip",
+  "country": ["DE", "AT", "CH"],
+  "homeassistant": "2024.1.0",
+  "render_readme": true,
+  "iot_class": "Local Polling"
+}
