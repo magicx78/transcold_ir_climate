@@ -27,6 +27,18 @@ DEFAULT_PROTOCOL = "transcold"
 COMMAND_FORMAT_RAW = "raw"
 COMMAND_FORMAT_BROADLINK = "broadlink"
 
+# Update-safe data directory (survives HACS updates, lives in /config)
+DATA_DIR = "transcold_ir"
+CODES_SUBDIR = "codes"
+CUSTOM_PROTOCOLS_SUBDIR = "protocols"
+
+# Sidebar panel
+PANEL_URL_PATH = "transcold-ir"
+PANEL_COMPONENT_NAME = "transcold-ir-panel"
+PANEL_TITLE = "IR Klima"
+PANEL_ICON = "mdi:remote"
+FRONTEND_STATIC_URL = "/transcold_ir_climate/frontend"
+
 # Transcold protocol constants (from IRremoteESP8266)
 TRANSCOLD_HDR_MARK = 5944
 TRANSCOLD_HDR_SPACE = 7563
