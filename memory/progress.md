@@ -34,12 +34,29 @@
 - Ablauf für künftige Versionen: Version in `manifest.json` bumpen → PR mergen
   → Release entsteht → in HA `ha_manage_hacs(update_information)` + `download`.
 
+**v1.2.1 — Veröffentlichungs-Reife**
+
+- CI `Validate` (hassfest + hacs/action + pytest) bei Push, PR, wöchentlich.
+  Fing sofort einen echten Fehler: hassfest verlangt Manifest-Keys als
+  „domain, name, dann strikt alphabetisch" — nicht die Core-Gruppierung.
+- LGPL-2.1 (LICENSE), passend zu IRremoteESP8266. Von GitHub als
+  `spdx_id: LGPL-2.1` erkannt (Erkennung läuft nur auf dem Default-Branch,
+  daher erst nach dem Merge grün).
+- Brand-Assets `brand/icon.png` (256²) + `logo.png` (512²) — HACS-Check
+  „brands" damit grün.
+- HA-Neustart durchgeführt; Config-Eintrag `loaded` (beweist, dass Panel-
+  und View-Registrierung fehlerfrei liefen), HACS auf v1.2.1 synchron.
+
 ## Offene Punkte
 
-- [ ] Nach dem HA-Neustart: Panel in der Seitenleiste verifizieren, einen
-      SmartIR-Import mit einer echten Datei durchspielen.
-- [ ] Optional: `brand/icon.png` ergänzen (HACS-Empfehlung, für Default-Store nötig).
-- [ ] Optional: CI-Workflows `hassfest` + `hacs/action` ergänzen — Pflicht für
-      die Aufnahme in den HACS-Default-Store.
+- [ ] **Nur manuell möglich:** GitHub-Repo-Topics setzen (Repo → About →
+      Zahnrad → Topics, z.B. `home-assistant`, `hacs`, `climate`, `infrared`,
+      `broadlink`, `esphome`). Letzter roter HACS-Check; per API-Token dieser
+      Session nicht setzbar.
+- [ ] Panel im Browser gegenprüfen und einen echten SmartIR-Import testen.
+- [ ] Optional: Icon zusätzlich im `home-assistant/brands`-Repo einreichen
+      (dann erscheint es auch in der HA-Integrationsliste, nicht nur in HACS).
 - [ ] Optional: Panel um „Code lernen" erweitern (Broadlink `remote.learn_command`
       direkt aus dem Panel, um eigene Code-Sets aufzuzeichnen).
+- [ ] Optional: Config-Eintrag von „1" auf einen sprechenden Namen umbenennen
+      (erscheint so im Panel-Tab „Geräte").
