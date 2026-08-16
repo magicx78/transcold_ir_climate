@@ -27,7 +27,8 @@
 - [ ] Nutzer: Physisch prüfen, ob die Klima auf `climate.ir_klima_3` reagiert
       (RM Office muss Sichtkontakt zur Klima haben; sonst auf
       `remote.wohnzimmer` umstellen).
-- [ ] Optional: GitHub-Release/Tag v1.1.1 anlegen, damit HACS-Updates
-      funktionieren (HACS-Downloads schlugen mit 404 auf Commit-Hash-Zips fehl).
+- [x] GitHub-Release/Tag v1.1.1: Release-Workflow (.github/workflows/release.yml,
+      läuft bei v*-Tag-Push) ergänzt; PR gemerged, Tag gepusht → Release
+      wird von Actions erzeugt. HACS nutzt künftig Release-Versionen.
 - [ ] Optional: ESPHome-Pfad testen (`esphome.ir_proxy_send_raw` existiert,
       Parametername der Action muss `command` sein).
