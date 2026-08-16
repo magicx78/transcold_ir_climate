@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (created at the workflow ref if missing)"
+        required: true
+        default: "v1.1.1"
 
 permissions:
   contents: write
@@ -15,8 +21,10 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: >-
-          gh release create "$GITHUB_REF_NAME"
+          gh release create "$TAG"
           --repo "$GITHUB_REPOSITORY"
-          --title "$GITHUB_REF_NAME"
+          --target "$GITHUB_SHA"
+          --title "$TAG"
           --generate-notes
